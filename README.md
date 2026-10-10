@@ -112,35 +112,55 @@ it silently tries to use the encrypted key file's own content as the password.
 
 **Deploying the BatchPin contract.** FireFly ships the contract's ABI+bytecode inside
 the core image at `/firefly/contracts/Firefly.json` (`contracts["Firefly.sol:Firefly"]`
-— no constructor args). Deploy it through the signer exactly like any other
-transaction, extracting the bytecode first:
+— no constructor args, and the file has two `"bin"` fields: the real one is the first,
+longer match -- the second belongs to the `IBatchPin` interface and is empty). Deploy
+it through the signer exactly like any other transaction.
+
+*Locally* (both `firefly-core`'s image and `curl` are on your host):
 ```bash
-# Extract the bytecode (run against whichever firefly-core image tag you're using)
 docker run --rm --entrypoint sh ghcr.io/hyperledger-firefly/firefly:v1.5.0 \
   -c "cat /firefly/contracts/Firefly.json" > /tmp/Firefly.json
-BYTECODE="0x$(python3 -c "import json; print(json.load(open('/tmp/Firefly.json'))['contracts']['Firefly.sol:Firefly']['bin'])")"
+BIN=$(grep -o '"bin":"[0-9a-f]*"' /tmp/Firefly.json | head -1 | sed 's/"bin":"//;s/"$//')
 
-# Deploy via the signer -- locally that's localhost:8555, on Render it's
-# firefly-signer's internal address (open a one-off shell/tunnel, or run this from
-# a service that can reach it on the private network)
 curl -s -X POST -H "Content-Type: application/json" --data '{
   "jsonrpc":"2.0","method":"eth_sendTransaction",
-  "params":[{"from":"<your signer address>","data":"'"$BYTECODE"'","gas":"0x3D0900","gasPrice":"0x0"}],
+  "params":[{"from":"<your signer address>","data":"0x'"$BIN"'","gas":"0x3D0900","gasPrice":"0x0"}],
   "id":1
 }' http://localhost:8555
-
-# Then fetch the receipt (same backend, e.g. localhost:8546 for firefly-besu) for
-# "contractAddress" -- that's your BATCHPIN_CONTRACT_ADDRESS.
+# then eth_getTransactionReceipt against localhost:8546 (besu) for "contractAddress"
 ```
+
+*On Render*, `firefly-signer` is a `pserv` — not reachable from your machine or the
+internet, only from other services on the project's private network. Use Render's
+**Shell** tab on the `firefly-core` service (it's on the same private network, and its
+image has `curl` but not Python, hence the `grep`/`sed` extraction instead of a JSON
+parser) and run, verbatim:
+```bash
+BIN=$(grep -o '"bin":"[0-9a-f]*"' /firefly/contracts/Firefly.json | head -1 | sed 's/"bin":"//;s/"$//')
+
+curl -s -X POST -H "Content-Type: application/json" --data '{
+  "jsonrpc":"2.0","method":"eth_sendTransaction",
+  "params":[{"from":"<your signer address>","data":"0x'"$BIN"'","gas":"0x3D0900","gasPrice":"0x0"}],
+  "id":1
+}' http://firefly-signer:8545
+```
+Then `eth_getTransactionReceipt` the same way against `http://firefly-besu:8545` for
+`"contractAddress"`. This assumes Render's private network resolves other services by
+their plain service name from any service's shell, not just ones wired via
+`fromService` — that's the one piece of this whole Render-specific flow that hasn't
+been run against a real account; everything above the "On Render" line has.
+
 Set `ORG_SIGNING_KEY` (the signer's address) and `BATCHPIN_CONTRACT_ADDRESS` on
-`firefly-core`, then restart it.
+`firefly-core`, then redeploy it.
 
 ## Multiparty mode: registering your identity
 
 Once `firefly-core` is up with a resolved BatchPin contract (`/api/v1/status` shows
 `multiparty.enabled: true` and a `contract.active`), org and node still show
 `registered: false` until you claim them — this broadcasts a message through IPFS +
-the BatchPin contract, so it also proves the whole multiparty pipeline works:
+the BatchPin contract, so it also proves the whole multiparty pipeline works. Run this
+against `http://localhost:5050` locally, or `firefly-core`'s public `*.onrender.com`
+URL on Render (this one IS public, unlike the signer):
 ```bash
 curl -s -X POST http://localhost:5050/api/v1/network/organizations/self -d '{}'
 # wait a few seconds for it to batch, publish to IPFS, and pin on-chain, then:
