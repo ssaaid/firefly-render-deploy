@@ -1,10 +1,12 @@
-# Render Blueprint for a single-org Hyperledger FireFly supernode.
+# Render Blueprint for a single-org Hyperledger FireFly supernode, backed by a
+# single-validator Besu IBFT2 chain running alongside it.
 #
 # Topology:
 #   firefly-core          (web)   public HTTP/UI API, talks to postgres + the 3 services below
 #   firefly-dataexchange  (web)   MUST be public: other orgs' nodes reach it directly over the internet
 #   firefly-evmconnect    (pserv) private: only firefly-core talks to it
 #   firefly-ipfs          (pserv) private: only firefly-core talks to it
+#   firefly-besu          (pserv) private: single IBFT2 validator, only firefly-evmconnect talks to it
 #
 # Verify this file against Render's current Blueprint spec before deploying
 # (https://render.com/docs/blueprint-spec) -- field names such as `fromService`
@@ -17,6 +19,23 @@ databases:
     user: firefly
 
 services:
+  - type: pserv
+    name: firefly-besu
+    runtime: docker
+    dockerfilePath: ./services/besu/Dockerfile
+    dockerContext: ./services/besu
+    plan: starter
+    disk:
+      name: besu-data
+      mountPath: /data/besu
+      sizeGB: 5
+    envVars:
+      # The validator private key matching the address baked into
+      # services/besu/genesis.json's extraData. Never commit this value --
+      # set it only in the Render dashboard. See README for the generated key.
+      - key: BESU_VALIDATOR_KEY
+        sync: false
+
   - type: pserv
     name: firefly-ipfs
     runtime: docker
@@ -39,7 +58,13 @@ services:
       mountPath: /data/evmconnect
       sizeGB: 1
     envVars:
-      # Set in the Render dashboard: your Besu/Quorum RPC, or a public testnet RPC.
+      - key: BESU_HOST
+        fromService:
+          type: pserv
+          name: firefly-besu
+          property: host
+      # Only needed if you point evmconnect at a different chain instead of
+      # the bundled firefly-besu service above (BESU_HOST takes precedence).
       - key: BLOCKCHAIN_RPC_URL
         sync: false
 

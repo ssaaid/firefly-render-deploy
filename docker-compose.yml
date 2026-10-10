@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -20,10 +18,21 @@ services:
       - "5001:5001"
       - "8080:8080"
 
+  besu:
+    build: ./services/besu
+    environment:
+      BESU_VALIDATOR_KEY: ${BESU_VALIDATOR_KEY:?set BESU_VALIDATOR_KEY in .env, see README}
+    volumes:
+      - besu-data:/data/besu
+    ports:
+      - "8546:8545" # remapped on the host to avoid clashing with besu-ibft2-private-blockchain's node-1
+
   evmconnect:
     build: ./services/evmconnect
+    depends_on:
+      - besu
     environment:
-      BLOCKCHAIN_RPC_URL: ${BLOCKCHAIN_RPC_URL:-http://host.docker.internal:8545}
+      BESU_HOST: besu
     volumes:
       - evmconnect-data:/data/evmconnect
     ports:
@@ -60,6 +69,7 @@ services:
 
 volumes:
   postgres-data:
+  besu-data:
   ipfs-data:
   evmconnect-data:
   dataexchange-data:
