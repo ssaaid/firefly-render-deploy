@@ -8,6 +8,10 @@ http:
 spi:
   enabled: true
 
+ui:
+  enabled: true
+  path: /firefly/frontend
+
 # Gateway mode: this namespace has no multiparty.org/multiparty.node/contract
 # block, so it talks directly to the chain through blockchain0 without the
 # multi-party broadcast/batch-pinning features (which need a deployed BatchPin
