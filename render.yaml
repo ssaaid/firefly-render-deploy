@@ -1,0 +1,93 @@
+# Render Blueprint for a single-org Hyperledger FireFly supernode.
+#
+# Topology:
+#   firefly-core          (web)   public HTTP/UI API, talks to postgres + the 3 services below
+#   firefly-dataexchange  (web)   MUST be public: other orgs' nodes reach it directly over the internet
+#   firefly-evmconnect    (pserv) private: only firefly-core talks to it
+#   firefly-ipfs          (pserv) private: only firefly-core talks to it
+#
+# Verify this file against Render's current Blueprint spec before deploying
+# (https://render.com/docs/blueprint-spec) -- field names such as `fromService`
+# properties can change between Render API versions.
+
+databases:
+  - name: firefly-db
+    plan: starter
+    databaseName: firefly
+    user: firefly
+
+services:
+  - type: pserv
+    name: firefly-ipfs
+    runtime: docker
+    dockerfilePath: ./services/ipfs/Dockerfile
+    dockerContext: ./services/ipfs
+    plan: starter
+    disk:
+      name: ipfs-data
+      mountPath: /data/ipfs
+      sizeGB: 5
+
+  - type: pserv
+    name: firefly-evmconnect
+    runtime: docker
+    dockerfilePath: ./services/evmconnect/Dockerfile
+    dockerContext: ./services/evmconnect
+    plan: starter
+    disk:
+      name: evmconnect-data
+      mountPath: /data/evmconnect
+      sizeGB: 1
+    envVars:
+      # Set in the Render dashboard: your Besu/Quorum RPC, or a public testnet RPC.
+      - key: BLOCKCHAIN_RPC_URL
+        sync: false
+
+  - type: web
+    name: firefly-dataexchange
+    runtime: docker
+    dockerfilePath: ./services/dataexchange/Dockerfile
+    dockerContext: ./services/dataexchange
+    plan: starter
+    disk:
+      name: dataexchange-data
+      mountPath: /data/dataexchange
+      sizeGB: 1
+    envVars:
+      # After the first deploy, set this to the service's onrender.com hostname
+      # (or your custom domain) -- other orgs' dataexchange plugins dial this.
+      - key: DATAEXCHANGE_PUBLIC_HOST
+        sync: false
+
+  - type: web
+    name: firefly-core
+    runtime: docker
+    dockerfilePath: ./services/core/Dockerfile
+    dockerContext: ./services/core
+    plan: starter
+    envVars:
+      - key: FIREFLY_NAMESPACE
+        value: default
+      - key: FIREFLY_ORG_NAME
+        value: org1
+      - key: FIREFLY_NODE_NAME
+        value: node1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: firefly-db
+          property: connectionString
+      - key: EVMCONNECT_HOST
+        fromService:
+          type: pserv
+          name: firefly-evmconnect
+          property: host
+      - key: DATAEXCHANGE_HOST
+        fromService:
+          type: web
+          name: firefly-dataexchange
+          property: host
+      - key: IPFS_HOST
+        fromService:
+          type: pserv
+          name: firefly-ipfs
+          property: host

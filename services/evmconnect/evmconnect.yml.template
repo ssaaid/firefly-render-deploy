@@ -1,0 +1,21 @@
+log:
+  level: info
+
+connector:
+  blockchain:
+    connection:
+      url: "${BLOCKCHAIN_RPC_URL}"
+    retry:
+      initialDelay: 5s
+      maxDelay: 30s
+
+confirmations:
+  required: 1
+
+persistence:
+  filesystem:
+    path: /data/evmconnect
+
+api:
+  address: 0.0.0.0
+  port: 5008

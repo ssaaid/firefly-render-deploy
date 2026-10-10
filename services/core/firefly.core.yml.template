@@ -1,0 +1,56 @@
+log:
+  level: info
+
+http:
+  port: 5000
+  address: 0.0.0.0
+
+admin:
+  enabled: true
+  port: 5001
+  address: 0.0.0.0
+
+namespaces:
+  default: ${FIREFLY_NAMESPACE}
+  predefined:
+    - name: ${FIREFLY_NAMESPACE}
+      plugins:
+        - database0
+        - blockchain0
+        - dataexchange0
+        - sharedstorage0
+
+plugins:
+  database:
+    - name: database0
+      type: postgres
+      postgres:
+        url: "${DATABASE_URL}"
+        migrationsDir: /app/db/postgres/migrations
+
+  blockchain:
+    - name: blockchain0
+      type: ethereum
+      ethereum:
+        ethconnect:
+          url: "${EVMCONNECT_URL}"
+
+  dataexchange:
+    - name: dataexchange0
+      type: https
+      https:
+        url: "${DATAEXCHANGE_URL}"
+
+  sharedstorage:
+    - name: sharedstorage0
+      type: ipfs
+      ipfs:
+        api:
+          url: "${IPFS_API_URL}"
+        gateway:
+          url: "${IPFS_GATEWAY_URL}"
+
+org:
+  name: ${FIREFLY_ORG_NAME}
+node:
+  name: ${FIREFLY_NODE_NAME}
