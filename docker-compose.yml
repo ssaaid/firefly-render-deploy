@@ -42,6 +42,8 @@ services:
     build: ./services/dataexchange
     environment:
       DATAEXCHANGE_PUBLIC_HOST: ${DATAEXCHANGE_PUBLIC_HOST:-localhost}
+      FIREFLY_ORG_NAME: ${FIREFLY_ORG_NAME:-org1}
+      FIREFLY_NODE_NAME: ${FIREFLY_NODE_NAME:-node1}
     volumes:
       - dataexchange-data:/data/dataexchange
     ports:
@@ -56,16 +58,17 @@ services:
       - evmconnect
       - dataexchange
     environment:
+      # Do NOT add FIREFLY_ORG_NAME/FIREFLY_NODE_NAME here: FireFly's own viper
+      # config binds env vars FIREFLY_<SECTION>_<KEY> to config keys, so those
+      # exact names get read as the deprecated top-level org.name/node.name
+      # config and silently force multiparty mode regardless of core.yml.
       FIREFLY_NAMESPACE: ${FIREFLY_NAMESPACE:-default}
-      FIREFLY_ORG_NAME: ${FIREFLY_ORG_NAME:-org1}
-      FIREFLY_NODE_NAME: ${FIREFLY_NODE_NAME:-node1}
       DATABASE_URL: postgres://firefly:firefly@postgres:5432/firefly?sslmode=disable
       EVMCONNECT_HOST: evmconnect
       DATAEXCHANGE_HOST: dataexchange
       IPFS_HOST: ipfs
     ports:
-      - "5000:5000"
-      - "5101:5001" # admin API; host 5001 is already taken by the ipfs API above
+      - "5050:5000" # host 5000 is often taken (e.g. macOS AirPlay Receiver)
 
 volumes:
   postgres-data:

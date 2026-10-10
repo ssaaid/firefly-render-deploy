@@ -31,10 +31,19 @@ to [Render](https://render.com) using a Blueprint (`render.yaml`).
   internet, so it's a `web` service, not `pserv`.
 
 Each service is a thin Docker wrapper around the official Hyperledger images
-(`hyperledger/firefly`, `firefly-evmconnect`, `firefly-dataexchange-https`, `ipfs/kubo`,
+(`ghcr.io/hyperledger-firefly/firefly`, `evmconnect`, `dataexchange-https`, `ipfs/kubo`,
 `hyperledger/besu`) that substitutes environment variables into a config template at
 container start (`envsubst` in each `entrypoint.sh`). Render wires the private
 hostnames between services via `fromService` in `render.yaml`.
+
+`firefly-core` currently runs its default namespace in **gateway mode** (no
+`multiparty` block) — it talks straight to the chain through `firefly-evmconnect`
+without the broadcast/batch-pinning features, which need a deployed BatchPin
+contract and both `firefly-dataexchange` and `firefly-ipfs` wired into the
+namespace. `firefly-dataexchange` and `firefly-ipfs` are deployed and reachable,
+just not yet plugged into the namespace — add them back to `namespaces.predefined[].plugins`
+in `services/core/firefly.core.yml.template` and switch to the `multiparty.*`
+config structure once you deploy a BatchPin contract and need multi-org flows.
 
 ## Connecting to Besu
 
@@ -75,15 +84,23 @@ over it only while `firefly-besu` exists.
 
 ## Before you deploy
 
-1. **Verify the config templates against your FireFly version.** The YAML under
-   `services/*/*.template` mirrors the schema FireFly's own CLI (`ff init`) generates,
-   but that schema has changed across FireFly releases. Run `scripts/check-config.sh`
-   and, if you have the `ff` CLI installed, diff its generated `core.yml` /
-   `evmconnect.yml` against the templates here before trusting them in production.
+The full stack (besu, evmconnect, ipfs, dataexchange, postgres, core) has been run
+and verified locally end to end: Besu produces blocks, evmconnect polls them,
+`firefly-core` connects over the event-stream WebSocket, and `/api/v1/status` responds
+with `multiparty.enabled: false` as expected for gateway mode. Still worth a look
+before deploying:
+
+1. **FireFly's version will drift.** The image tags are pinned (`v1.5.0`/`v1.5.1`/`v1.4.0`,
+   from [firefly/manifest.json](https://github.com/hyperledger/firefly/blob/main/manifest.json)),
+   but if you bump them, re-check the config schema with
+   `docker run --rm --entrypoint /usr/bin/firefly <image> showconfig` — it changes between
+   releases (e.g. `org:`/`node:` are deprecated and `admin:` was renamed to `spi:` since
+   whatever version these templates were last written against).
 2. **Review the Blueprint spec.** `render.yaml` uses `fromService`/`fromDatabase` to
    wire internal URLs; double-check the exact field names against
    [Render's current Blueprint spec](https://render.com/docs/blueprint-spec) since
-   this file was written from memory of that schema, not fetched live.
+   this file was written from memory of that schema, not fetched live (unlike the
+   container configs above, this part has NOT been run against a real Render account yet).
 
 ## Test locally first
 
@@ -95,8 +112,9 @@ docker compose up --build
 ```
 
 Then open:
-- `http://localhost:5000/api/v1/network/organizations` — core API
-- `http://localhost:5000/ui` — FireFly Explorer UI
+- `http://localhost:5050/api/v1/status` — core API (note: host port 5050, mapped from
+  the container's 5000 — 5000 is often already taken locally, e.g. by macOS AirPlay)
+- `http://localhost:5050/ui` — FireFly Explorer UI
 
 ## Deploy to Render
 
@@ -121,7 +139,7 @@ docker-compose.yml           Local equivalent, for testing before you push
 services/core/               FireFly core: Dockerfile, entrypoint, config template
 services/evmconnect/         Blockchain connector
 services/besu/               Single-validator IBFT2 chain (genesis.json committed, key is not)
-services/dataexchange/       Org-to-org data exchange (public-facing)
+services/dataexchange/       Org-to-org data exchange (public-facing), generates its own TLS cert on first boot
 services/ipfs/               Shared storage backend
 scripts/check-config.sh      Sanity checks before deploying
 ```

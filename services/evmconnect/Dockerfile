@@ -1,4 +1,4 @@
-FROM hyperledger/firefly-evmconnect:latest
+FROM ghcr.io/hyperledger-firefly/evmconnect:v1.5.1
 
 USER root
 RUN apk add --no-cache gettext

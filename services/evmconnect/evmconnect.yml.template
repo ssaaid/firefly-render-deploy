@@ -1,20 +1,16 @@
 log:
   level: info
 
+persistence:
+  type: leveldb
+  leveldb:
+    path: /data/evmconnect
+
 connector:
-  blockchain:
-    connection:
-      url: "${BLOCKCHAIN_RPC_URL}"
-    retry:
-      initialDelay: 5s
-      maxDelay: 30s
+  url: "${BLOCKCHAIN_RPC_URL}"
 
 confirmations:
   required: 1
-
-persistence:
-  filesystem:
-    path: /data/evmconnect
 
 api:
   address: 0.0.0.0
