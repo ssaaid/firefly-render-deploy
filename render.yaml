@@ -1,12 +1,20 @@
-# Render Blueprint for a single-org Hyperledger FireFly supernode, backed by a
-# single-validator Besu IBFT2 chain running alongside it.
+# Render Blueprint for a single-org Hyperledger FireFly supernode in
+# multiparty mode, backed by a single-validator Besu IBFT2 chain.
 #
 # Topology:
-#   firefly-core          (web)   public HTTP/UI API, talks to postgres + the 3 services below
+#   firefly-core          (web)   public HTTP/UI API, talks to postgres + the services below
 #   firefly-dataexchange  (web)   MUST be public: other orgs' nodes reach it directly over the internet
-#   firefly-evmconnect    (pserv) private: only firefly-core talks to it
+#   firefly-evmconnect    (pserv) private: talks to firefly-signer (never holds a key itself)
+#   firefly-signer        (pserv) private: holds the org's signing key, signs for firefly-besu
 #   firefly-ipfs          (pserv) private: only firefly-core talks to it
-#   firefly-besu          (pserv) private: single IBFT2 validator, only firefly-evmconnect talks to it
+#   firefly-besu          (pserv) private: single IBFT2 validator, only firefly-signer talks to it
+#
+# After the first deploy, you must deploy the FireFly BatchPin contract
+# yourself and set its address as BATCHPIN_CONTRACT_ADDRESS below -- see
+# "Connecting to Besu" / "Multiparty mode" in the README for the exact steps
+# (same ones used to verify this locally: a raw eth_sendTransaction through
+# firefly-signer's exposed RPC, using the bytecode baked into the firefly-core
+# image at /firefly/contracts/Firefly.json).
 #
 # Verify this file against Render's current Blueprint spec before deploying
 # (https://render.com/docs/blueprint-spec) -- field names such as `fromService`
@@ -37,6 +45,27 @@ services:
         sync: false
 
   - type: pserv
+    name: firefly-signer
+    runtime: docker
+    dockerfilePath: ./services/signer/Dockerfile
+    dockerContext: ./services/signer
+    plan: starter
+    disk:
+      name: signer-data
+      mountPath: /data/signer
+      sizeGB: 1
+    envVars:
+      - key: BESU_HOST
+        fromService:
+          type: pserv
+          name: firefly-besu
+          property: host
+      # Raw hex private key (0x...) for the org's signing identity. Generate
+      # one, store it safely, set it here -- never commit it. See README.
+      - key: SIGNER_KEY
+        sync: false
+
+  - type: pserv
     name: firefly-ipfs
     runtime: docker
     dockerfilePath: ./services/ipfs/Dockerfile
@@ -58,13 +87,13 @@ services:
       mountPath: /data/evmconnect
       sizeGB: 1
     envVars:
-      - key: BESU_HOST
+      - key: SIGNER_HOST
         fromService:
           type: pserv
-          name: firefly-besu
+          name: firefly-signer
           property: host
-      # Only needed if you point evmconnect at a different chain instead of
-      # the bundled firefly-besu service above (BESU_HOST takes precedence).
+      # Only needed if you point evmconnect at a different chain/signer setup
+      # instead of the bundled firefly-signer above (SIGNER_HOST takes precedence).
       - key: BLOCKCHAIN_RPC_URL
         sync: false
 
@@ -95,12 +124,24 @@ services:
     dockerContext: ./services/core
     plan: starter
     envVars:
-      # Do NOT add FIREFLY_ORG_NAME/FIREFLY_NODE_NAME here: FireFly's own viper
-      # config binds env vars FIREFLY_<SECTION>_<KEY> to config keys, so those
-      # exact names get read as the deprecated top-level org.name/node.name
-      # config and silently force multiparty mode regardless of core.yml.
+      # Do NOT name any of these FIREFLY_ORG_* / FIREFLY_NODE_*: FireFly's own
+      # viper config auto-binds env vars FIREFLY_<SECTION>_<KEY> to config keys
+      # regardless of what's in core.yml, so e.g. FIREFLY_ORG_NAME gets read as
+      # the deprecated top-level org.name and reintroduces the old validation
+      # path. Stick to unprefixed names (CORE_*, ORG_*) for our own substitution.
       - key: FIREFLY_NAMESPACE
         value: default
+      - key: CORE_ORG_NAME
+        value: org1
+      - key: CORE_NODE_NAME
+        value: node1
+      - key: ORG_SIGNING_KEY
+        # The address of the firefly-signer keystore account (printed when you
+        # generate it -- see README). Must match SIGNER_KEY on firefly-signer.
+        sync: false
+      - key: BATCHPIN_CONTRACT_ADDRESS
+        # Set after deploying the BatchPin contract -- see README.
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: firefly-db

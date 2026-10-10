@@ -1,0 +1,15 @@
+log:
+  level: info
+
+backend:
+  url: "http://${BESU_HOST}:8545"
+
+fileWallet:
+  path: /data/signer/keystore
+  filenames:
+    primaryExt: .key.json
+    passwordExt: .pwd
+
+server:
+  address: 0.0.0.0
+  port: 8545

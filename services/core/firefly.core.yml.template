@@ -12,19 +12,26 @@ ui:
   enabled: true
   path: /firefly/frontend
 
-# Gateway mode: this namespace has no multiparty.org/multiparty.node/contract
-# block, so it talks directly to the chain through blockchain0 without the
-# multi-party broadcast/batch-pinning features (which need a deployed BatchPin
-# contract and all 4 plugin types -- database, blockchain, sharedstorage,
-# dataexchange). Fine for proving core <-> evmconnect <-> besu connectivity;
-# revisit once a BatchPin contract is deployed and multi-org flows are needed.
 namespaces:
   default: ${FIREFLY_NAMESPACE}
   predefined:
     - name: ${FIREFLY_NAMESPACE}
+      multiparty:
+        enabled: true
+        org:
+          name: ${CORE_ORG_NAME}
+          key: "${ORG_SIGNING_KEY}"
+        node:
+          name: ${CORE_NODE_NAME}
+        contract:
+          - location:
+              address: "${BATCHPIN_CONTRACT_ADDRESS}"
+            firstEvent: "0"
       plugins:
         - database0
         - blockchain0
+        - dataexchange0
+        - sharedstorage0
 
 plugins:
   database:
@@ -42,3 +49,18 @@ plugins:
         ethconnect:
           url: "${EVMCONNECT_URL}"
           topic: "0"
+
+  dataexchange:
+    - name: dataexchange0
+      type: ffdx
+      ffdx:
+        url: "${DATAEXCHANGE_URL}"
+
+  sharedstorage:
+    - name: sharedstorage0
+      type: ipfs
+      ipfs:
+        api:
+          url: "${IPFS_API_URL}"
+        gateway:
+          url: "${IPFS_GATEWAY_URL}"

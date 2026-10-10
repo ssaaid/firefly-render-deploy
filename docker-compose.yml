@@ -27,12 +27,25 @@ services:
     ports:
       - "8546:8545" # remapped on the host to avoid clashing with besu-ibft2-private-blockchain's node-1
 
-  evmconnect:
-    build: ./services/evmconnect
+  signer:
+    build: ./services/signer
     depends_on:
       - besu
     environment:
       BESU_HOST: besu
+      SIGNER_KEY: ${SIGNER_KEY:?set SIGNER_KEY in .env, see README}
+    volumes:
+      - signer-data:/data/signer
+    ports:
+      - "8555:8545"
+
+  evmconnect:
+    build: ./services/evmconnect
+    depends_on:
+      - besu
+      - signer
+    environment:
+      SIGNER_HOST: signer
     volumes:
       - evmconnect-data:/data/evmconnect
     ports:
@@ -58,11 +71,16 @@ services:
       - evmconnect
       - dataexchange
     environment:
-      # Do NOT add FIREFLY_ORG_NAME/FIREFLY_NODE_NAME here: FireFly's own viper
-      # config binds env vars FIREFLY_<SECTION>_<KEY> to config keys, so those
-      # exact names get read as the deprecated top-level org.name/node.name
-      # config and silently force multiparty mode regardless of core.yml.
+      # Do NOT name any of these FIREFLY_ORG_* / FIREFLY_NODE_* / FIREFLY_*:
+      # FireFly's own viper config auto-binds env vars FIREFLY_<SECTION>_<KEY>
+      # to config keys regardless of what's in core.yml, so e.g. FIREFLY_ORG_NAME
+      # gets read as the deprecated top-level org.name and silently reintroduces
+      # the old validation path. Stick to unprefixed names for our own substitution.
       FIREFLY_NAMESPACE: ${FIREFLY_NAMESPACE:-default}
+      CORE_ORG_NAME: ${FIREFLY_ORG_NAME:-org1}
+      CORE_NODE_NAME: ${FIREFLY_NODE_NAME:-node1}
+      ORG_SIGNING_KEY: ${ORG_SIGNING_KEY:?set ORG_SIGNING_KEY in .env, see README}
+      BATCHPIN_CONTRACT_ADDRESS: ${BATCHPIN_CONTRACT_ADDRESS:?set BATCHPIN_CONTRACT_ADDRESS in .env, see README}
       DATABASE_URL: postgres://firefly:firefly@postgres:5432/firefly?sslmode=disable
       EVMCONNECT_HOST: evmconnect
       DATAEXCHANGE_HOST: dataexchange
@@ -73,6 +91,7 @@ services:
 volumes:
   postgres-data:
   besu-data:
+  signer-data:
   ipfs-data:
   evmconnect-data:
   dataexchange-data:
