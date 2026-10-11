@@ -19,6 +19,14 @@
 # Verify this file against Render's current Blueprint spec before deploying
 # (https://render.com/docs/blueprint-spec) -- field names such as `fromService`
 # properties can change between Render API versions.
+#
+# Each service's buildFilter scopes auto-deploy to its own directory -- without
+# it, Render redeploys all 6 services on every push (even a README-only commit),
+# which caused a real crash once: multiple services restarting simultaneously
+# raced each other's private-network DNS and firefly-core hard-exited on a
+# WebSocket connect failure to firefly-dataexchange before it came back up.
+# Note Render always reprocesses this file itself on any change, regardless
+# of buildFilter -- so editing render.yaml still redeploys everything once.
 
 databases:
   - name: firefly-db
@@ -32,6 +40,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/besu/Dockerfile
     dockerContext: ./services/besu
+    buildFilter:
+      paths:
+        - services/besu/**
     plan: starter
     disk:
       name: besu-data
@@ -49,6 +60,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/signer/Dockerfile
     dockerContext: ./services/signer
+    buildFilter:
+      paths:
+        - services/signer/**
     plan: starter
     disk:
       name: signer-data
@@ -70,6 +84,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/ipfs/Dockerfile
     dockerContext: ./services/ipfs
+    buildFilter:
+      paths:
+        - services/ipfs/**
     plan: starter
     disk:
       name: ipfs-data
@@ -81,6 +98,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/evmconnect/Dockerfile
     dockerContext: ./services/evmconnect
+    buildFilter:
+      paths:
+        - services/evmconnect/**
     plan: starter
     disk:
       name: evmconnect-data
@@ -102,6 +122,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/dataexchange/Dockerfile
     dockerContext: ./services/dataexchange
+    buildFilter:
+      paths:
+        - services/dataexchange/**
     plan: starter
     disk:
       name: dataexchange-data
@@ -122,6 +145,9 @@ services:
     runtime: docker
     dockerfilePath: ./services/core/Dockerfile
     dockerContext: ./services/core
+    buildFilter:
+      paths:
+        - services/core/**
     plan: starter
     envVars:
       # Do NOT name any of these FIREFLY_ORG_* / FIREFLY_NODE_*: FireFly's own
