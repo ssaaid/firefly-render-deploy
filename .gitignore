@@ -1,4 +1,5 @@
 .env
+openshift/01-secrets.yaml
 firefly-stack/
 *.log
 .DS_Store

@@ -1,0 +1,50 @@
+# Apply everything with: oc apply -k openshift/
+# (after creating 01-secrets.yaml from 01-secrets.example.yaml -- see README)
+#
+# Namespace is NOT set here deliberately: 00-namespace.yaml creates the
+# Project, and every other manifest already hardcodes `namespace: firefly`
+# in its own metadata (kept explicit/greppable rather than relying on
+# kustomize's namespace: transformer, consistent with this repo's existing
+# "no abstraction beyond what's needed" style elsewhere).
+resources:
+  - 00-namespace.yaml
+  - 01-secrets.yaml
+  - 02-configmap.yaml
+  - 10-postgres.yaml
+  - 11-besu.yaml
+  - 12-besu2.yaml
+  - 13-signer.yaml
+  - 14-evmconnect.yaml
+  - 15-evmconnect2.yaml
+  - 16-ipfs.yaml
+  - 17-dataexchange.yaml
+  - 18-core.yaml
+
+# Remaps the placeholder image names used in each Deployment to your actual
+# registry. Replace REPLACE_ME_REGISTRY (e.g. de.icr.io/your-namespace for IBM
+# Container Registry, or your internal BNP registry host/path) and push each
+# image there first -- see the README's "Deploying to OpenShift" section for
+# the exact build+push commands (same Dockerfiles as Render/local, nothing
+# OpenShift-specific about the images themselves).
+images:
+  - name: firefly-besu
+    newName: REPLACE_ME_REGISTRY/firefly-besu
+    newTag: latest
+  - name: firefly-besu2
+    newName: REPLACE_ME_REGISTRY/firefly-besu2
+    newTag: latest
+  - name: firefly-signer
+    newName: REPLACE_ME_REGISTRY/firefly-signer
+    newTag: latest
+  - name: firefly-evmconnect
+    newName: REPLACE_ME_REGISTRY/firefly-evmconnect
+    newTag: latest
+  - name: firefly-ipfs
+    newName: REPLACE_ME_REGISTRY/firefly-ipfs
+    newTag: latest
+  - name: firefly-dataexchange
+    newName: REPLACE_ME_REGISTRY/firefly-dataexchange
+    newTag: latest
+  - name: firefly-core
+    newName: REPLACE_ME_REGISTRY/firefly-core
+    newTag: latest

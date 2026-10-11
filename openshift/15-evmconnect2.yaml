@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firefly-evmconnect2-data
+  namespace: firefly
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-evmconnect2
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-evmconnect2
+  template:
+    metadata:
+      labels:
+        app: firefly-evmconnect2
+    spec:
+      securityContext:
+        fsGroup: 0 # see firefly-besu's comment in 11-besu.yaml
+      containers:
+        - name: evmconnect2
+          # Same image as firefly-evmconnect -- reused unchanged, connects
+          # directly to firefly-besu2 (no signer, gateway namespace has
+          # nothing to sign). See services/evmconnect/entrypoint.sh.
+          image: firefly-evmconnect:latest
+          ports:
+            - containerPort: 5008
+          env:
+            - name: BESU_HOST
+              value: firefly-besu2
+          volumeMounts:
+            - name: data
+              mountPath: /data/evmconnect
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 5008 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: firefly-evmconnect2-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-evmconnect2
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-evmconnect2
+  ports:
+    - port: 5008
+      targetPort: 5008

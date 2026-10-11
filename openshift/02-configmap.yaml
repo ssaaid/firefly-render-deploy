@@ -1,0 +1,20 @@
+# Plain (non-secret) config. CORE_PUBLIC_URL and DATAEXCHANGE_PUBLIC_HOST have
+# the same chicken-and-egg problem as on Render: the Route hostname is only
+# known after you create the Route (step 4 in the README), so apply this once
+# with placeholders, get the Routes, then `oc edit cm firefly-urls` (or
+# re-apply) and roll out firefly-core + firefly-dataexchange again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: firefly-urls
+  namespace: firefly
+data:
+  FIREFLY_NAMESPACE: "default"
+  CORE_ORG_NAME: "org1"
+  CORE_NODE_NAME: "node1"
+  # Set to the firefly-core Route's hostname, e.g. https://firefly-core-firefly.apps.<cluster-domain>
+  CORE_PUBLIC_URL: "http://PLACEHOLDER"
+  FIREFLY_ORG_NAME: "org1"
+  FIREFLY_NODE_NAME: "node1"
+  # Set to the firefly-dataexchange Route's hostname (host only, no scheme/port)
+  DATAEXCHANGE_PUBLIC_HOST: "PLACEHOLDER"

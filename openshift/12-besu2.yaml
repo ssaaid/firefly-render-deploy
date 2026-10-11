@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firefly-besu2-data
+  namespace: firefly
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-besu2
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-besu2
+  template:
+    metadata:
+      labels:
+        app: firefly-besu2
+    spec:
+      securityContext:
+        fsGroup: 0 # see firefly-besu's comment in 11-besu.yaml -- same caveat applies here
+      containers:
+        - name: besu2
+          image: firefly-besu2:latest
+          ports:
+            - containerPort: 8545
+          env:
+            - name: BESU_VALIDATOR_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firefly-besu2-secret
+                  key: BESU_VALIDATOR_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data/besu
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          readinessProbe:
+            tcpSocket: { port: 8545 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: firefly-besu2-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-besu2
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-besu2
+  ports:
+    - port: 8545
+      targetPort: 8545

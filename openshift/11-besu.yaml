@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firefly-besu-data
+  namespace: firefly
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-besu
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-besu
+  template:
+    metadata:
+      labels:
+        app: firefly-besu
+    spec:
+      # fsGroup: 0 makes the mounted volume group-writable by root's group,
+      # which OpenShift's restricted SCC always includes as a supplementary
+      # group for the arbitrary UID it assigns -- the standard trick for
+      # third-party images (like this one) that weren't built with OpenShift's
+      # "support arbitrary user IDs" convention in mind. UNVERIFIED against a
+      # real cluster: if firefly-besu still CrashLoops on a permissions error
+      # against /data/besu, this is the first thing to look at, followed by
+      # asking the platform team whether this service account needs a
+      # different SCC (e.g. anyuid) instead.
+      securityContext:
+        fsGroup: 0
+      containers:
+        - name: besu
+          image: firefly-besu:latest # remapped by kustomization.yaml's images: section
+          ports:
+            - containerPort: 8545
+          env:
+            - name: BESU_VALIDATOR_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firefly-besu-secret
+                  key: BESU_VALIDATOR_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data/besu
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          readinessProbe:
+            tcpSocket: { port: 8545 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: firefly-besu-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-besu
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-besu
+  ports:
+    - port: 8545
+      targetPort: 8545

@@ -325,6 +325,94 @@ Then open:
 6. Register your org + node identity (see "Multiparty mode: registering your
    identity" above) against `firefly-core`'s public URL.
 
+## Deploy to OpenShift (IBM Cloud)
+
+A second, independent deployment of the same stack, coexisting with Render --
+own keys, own addresses, nothing shared between the two. **None of this has
+been run against a real cluster**; it was written without cluster access (this
+session only had the Dockerfiles/Render history to work from), so treat it as
+a well-reasoned first draft for your platform team to pressure-test, not a
+verified recipe like the Render steps above were.
+
+Manifests live under `openshift/`, one file per logical component, applied
+together via Kustomize. The container images are the exact same ones used
+locally and on Render (`services/*/Dockerfile`) -- OpenShift doesn't need
+different images, just a different orchestration layer around them.
+
+1. **Build and push each image** to your internal registry (IBM Container
+   Registry, or whatever BNP's internal one is):
+   ```bash
+   REGISTRY=<your-registry>/<namespace>   # e.g. de.icr.io/my-namespace
+   for svc in besu besu2 signer evmconnect dataexchange ipfs core; do
+     docker build -t "$REGISTRY/firefly-$svc:latest" "services/$svc"
+     docker push "$REGISTRY/firefly-$svc:latest"
+   done
+   ```
+   (`evmconnect2` reuses the `evmconnect` image unchanged -- no separate build.)
+2. **Edit `openshift/kustomization.yaml`**: replace every `REPLACE_ME_REGISTRY`
+   with your actual `$REGISTRY` from step 1.
+3. **Create the secrets file**: `cp openshift/01-secrets.example.yaml
+   openshift/01-secrets.yaml` (gitignored -- never commit the real one) and
+   fill in `BESU_VALIDATOR_KEY` ×2, `SIGNER_KEY`, `ORG_SIGNING_KEY`,
+   `BATCHPIN_CONTRACT_ADDRESS`, `DATABASE_URL`, `POSTGRES_PASSWORD` -- same
+   generation steps as "Connecting to Besu" / "Multiparty mode" above, just
+   writing them into this file instead of a Render dashboard. Leave
+   `ORG_SIGNING_KEY`/`BATCHPIN_CONTRACT_ADDRESS` as placeholders for now --
+   same chicken-and-egg as Render, filled in at step 6.
+4. **Apply**:
+   ```bash
+   oc login --token=... --server=...   # on the machine with cluster access
+   oc apply -k openshift/
+   ```
+   This creates the `firefly` Project, Postgres, both Besu chains, the
+   signer, both evmconnect instances, IPFS, data exchange, and core -- but
+   `firefly-core` will crash-loop until step 6 (placeholder contract
+   address), same as it did on Render's first boot.
+5. **Get the Route hostnames** once `firefly-dataexchange` and `firefly-core`
+   are up:
+   ```bash
+   oc get routes -n firefly
+   ```
+   Edit `openshift/02-configmap.yaml`: set `DATAEXCHANGE_PUBLIC_HOST` to the
+   dataexchange Route's host (no scheme), and `CORE_PUBLIC_URL` to
+   `https://` + the core Route's host. Re-apply (`oc apply -k openshift/`)
+   and roll out both (`oc rollout restart deployment/firefly-dataexchange
+   deployment/firefly-core -n firefly`).
+6. **Deploy the BatchPin contract and register identity**: `oc rsh
+   deploy/firefly-core -n firefly` gets you a shell on the same private
+   network as `firefly-signer` and `firefly-besu` -- from there, the exact
+   same `grep`/`sed`/`curl` commands from "Multiparty mode" above work
+   unchanged (just replace `firefly-signer`/`firefly-besu` hostnames, which
+   resolve the same way via in-cluster Service DNS). Update
+   `openshift/01-secrets.yaml` with the real `ORG_SIGNING_KEY` +
+   `BATCHPIN_CONTRACT_ADDRESS`, re-apply, and roll out `firefly-core` again.
+   Then register org + node the same way, against the core Route's URL.
+
+**Specifically unverified, worth checking first:**
+- **Non-root/SCC.** Every Dockerfile here ends with `USER root` (needed to
+  install packages at build time) and never drops back to a non-root user.
+  OpenShift's default `restricted` SCC overrides this with an arbitrary UID
+  at runtime regardless, but that arbitrary UID needs to be able to write to
+  each PVC-backed `/data/...` directory. `fsGroup: 0` is set on every pod as
+  the standard mitigation (relies on the arbitrary UID always getting group
+  0 as a supplementary group), but none of these base images were built with
+  OpenShift's "support arbitrary user IDs" guidelines in mind, so a
+  permission-denied CrashLoop on first boot wouldn't be shocking. If that
+  happens, the fix is either adjusting the SCC for this project's service
+  accounts (ask the platform team) or an initContainer that chmods the
+  volume before the main container starts.
+- **Dataexchange's Route** targets the P2P port (3001, mutual TLS,
+  passthrough termination) rather than the API port (3000) -- this is the
+  theoretically correct choice (other orgs' dataexchange plugins speak P2P,
+  not the internal API), but double-check it actually behaves, and note that
+  the equivalent question on the *Render* side (which of 3000/3001 Render's
+  single-primary-port `web` type actually maps to :443) was never confirmed
+  either -- worth revisiting there too.
+- **Resource requests/limits** in each manifest are placeholder guesses, not
+  measured -- adjust to whatever BNP's cluster quotas actually require.
+- **Storage class**: PVCs omit `storageClassName`, relying on the cluster's
+  default. Set it explicitly if your platform team requires a specific one.
+
 ## Repo layout
 
 ```
@@ -337,5 +425,6 @@ services/besu/               Single-validator IBFT2 chain (genesis.json committe
 services/besu2/              A second, independent IBFT2 chain -- its own "besu2" namespace in FireFly
 services/dataexchange/       Org-to-org data exchange (public-facing), generates its own TLS cert on first boot
 services/ipfs/               Shared storage backend
+openshift/                   Kustomize manifests for a second, independent deployment on OpenShift
 scripts/check-config.sh      Sanity checks before deploying
 ```

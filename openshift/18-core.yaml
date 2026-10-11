@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-core
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-core
+  template:
+    metadata:
+      labels:
+        app: firefly-core
+    spec:
+      containers:
+        - name: core
+          image: firefly-core:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: firefly-urls
+            - secretRef:
+                name: firefly-core-secret
+          env:
+            # Plain Service DNS names -- no fromService indirection needed in-cluster.
+            - name: EVMCONNECT_HOST
+              value: firefly-evmconnect
+            - name: EVMCONNECT2_HOST
+              value: firefly-evmconnect2
+            - name: DATAEXCHANGE_HOST
+              value: firefly-dataexchange
+            - name: IPFS_HOST
+              value: firefly-ipfs
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /api/v1/status, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-core
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-core
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+# Public -- the API/UI. Host left unset: OpenShift auto-generates one.
+# Find it with `oc get route firefly-core -n firefly`, then set CORE_PUBLIC_URL
+# in 02-configmap.yaml to the full https:// URL and roll out again.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: firefly-core
+  namespace: firefly
+spec:
+  to:
+    kind: Service
+    name: firefly-core
+  port:
+    targetPort: 5000
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

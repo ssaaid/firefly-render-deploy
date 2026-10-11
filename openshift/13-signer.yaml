@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firefly-signer-data
+  namespace: firefly
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-signer
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-signer
+  template:
+    metadata:
+      labels:
+        app: firefly-signer
+    spec:
+      securityContext:
+        fsGroup: 0 # see firefly-besu's comment in 11-besu.yaml
+      containers:
+        - name: signer
+          image: firefly-signer:latest
+          ports:
+            - containerPort: 8545
+          env:
+            - name: BESU_HOST
+              value: firefly-besu # plain Service DNS name -- no fromService indirection needed in-cluster
+            - name: SIGNER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: firefly-signer-secret
+                  key: SIGNER_KEY
+          volumeMounts:
+            - name: data
+              mountPath: /data/signer
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 8545 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: firefly-signer-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-signer
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-signer
+  ports:
+    - port: 8545
+      targetPort: 8545

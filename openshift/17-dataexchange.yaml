@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: firefly-dataexchange-data
+  namespace: firefly
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firefly-dataexchange
+  namespace: firefly
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: firefly-dataexchange
+  template:
+    metadata:
+      labels:
+        app: firefly-dataexchange
+    spec:
+      securityContext:
+        fsGroup: 0 # see firefly-besu's comment in 11-besu.yaml
+      containers:
+        - name: dataexchange
+          image: firefly-dataexchange:latest
+          ports:
+            - containerPort: 3000
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: firefly-urls
+          volumeMounts:
+            - name: data
+              mountPath: /data/dataexchange
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          readinessProbe:
+            tcpSocket: { port: 3000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: firefly-dataexchange-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: firefly-dataexchange
+  namespace: firefly
+spec:
+  selector:
+    app: firefly-dataexchange
+  ports:
+    - name: api
+      port: 3000
+      targetPort: 3000
+    - name: p2p
+      port: 3001
+      targetPort: 3001
+---
+# Must be public -- this is the one piece other orgs' FireFly nodes dial
+# directly over the internet (same reasoning as the `web` type on Render).
+# Routes to the P2P port (3001, mutual-TLS, what remote peers actually speak),
+# NOT the API port (3000, plain HTTP, meant only for firefly-core's internal
+# use -- it has no transport auth of its own). Since the P2P side already
+# does its own TLS, use passthrough rather than edge termination so OpenShift's
+# router doesn't try to re-terminate/re-encrypt a connection that's not a
+# normal HTTP request. UNVERIFIED: worth double-checking the Render side too
+# -- render.yaml's `web` service type only maps ONE primary port to :443, and
+# which of 3000/3001 Render picked as primary was never actually confirmed.
+#
+# Host left unset: OpenShift auto-generates <name>-<namespace>.apps.<cluster-domain>.
+# Find it with `oc get route firefly-dataexchange -n firefly`, then set
+# DATAEXCHANGE_PUBLIC_HOST in 02-configmap.yaml to that host (no scheme) and
+# re-apply + roll out this deployment again -- same chicken-and-egg as Render.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: firefly-dataexchange
+  namespace: firefly
+spec:
+  to:
+    kind: Service
+    name: firefly-dataexchange
+  port:
+    targetPort: p2p
+  tls:
+    termination: passthrough
