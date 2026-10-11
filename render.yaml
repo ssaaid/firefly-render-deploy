@@ -22,7 +22,7 @@
 
 databases:
   - name: firefly-db
-    plan: starter
+    plan: basic-256mb # legacy "starter" plan is no longer accepted for new Postgres instances
     databaseName: firefly
     user: firefly
 
