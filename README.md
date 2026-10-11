@@ -65,6 +65,17 @@ matching validator private key is **not** committed — committing a key to git 
 habit worth keeping even for a throwaway dev chain. It was generated once for this repo
 and printed to the terminal when this was set up; store it in your password manager, then:
 
+> **Do not generate a fresh `BESU_VALIDATOR_KEY`.** Unlike `SIGNER_KEY` (any new random
+> key works fine there), this one is NOT interchangeable: `genesis.json`'s `extraData`
+> hardcodes a specific validator address, and if the key you run with doesn't derive to
+> that exact address, Besu boots fine, answers RPC calls fine, and silently never
+> produces a single block -- it's just not in the validator set, so it has no authority
+> to propose. This happened once deploying this exact repo: a freshly-generated key was
+> pasted into `BESU_VALIDATOR_KEY` on Render, the service showed "Deployed", RPC worked,
+> and `eth_blockNumber` sat at `0x0` for 15+ minutes with zero IBFT log lines before
+> anyone noticed. Use the one key below, on every environment, forever (unless you
+> regenerate both together per the next paragraph).
+
 - **Locally**: put it in `.env` as `BESU_VALIDATOR_KEY=0x...` (`.env` is gitignored).
 - **On Render**: set it on the `firefly-besu` service's `BESU_VALIDATOR_KEY` env var
   in the dashboard (it's marked `sync: false` in `render.yaml`, so Render won't ask
@@ -169,6 +180,19 @@ curl -s -X POST http://localhost:5050/api/v1/network/nodes/self -d '{}'
 Check `/api/v1/status` or the **Network** tab in the UI (`/ui`) afterwards — both
 should show `registered: true`. If the node claim 404s with "Identity could not be
 resolved", the org claim hasn't confirmed on-chain yet; wait ~10s and retry.
+
+**Known limitation: there's no working "update profile" call.** If you register the
+node, then change `DATAEXCHANGE_PUBLIC_HOST` (or anything else in its profile) and
+re-POST `/network/nodes/self` -- even passing the existing identity's `id` in the
+body -- FireFly doesn't treat it as an update. It generates a brand new claim for a
+new identity UUID, which then gets rejected on confirmation: `FF10407: Rejected
+identity claim '<new-id>' - conflicts with existing: '<old-id>'`. The already-published
+profile (cert, endpoint) is stuck with whatever was true the first time you registered.
+Get `DATAEXCHANGE_PUBLIC_HOST` right *before* that first registration if you can; if
+you're stuck with a stale profile afterwards, this needs more investigation (something
+under `/identities` rather than `/network/nodes/self` is the likely right tool, but
+that wasn't found/verified here) -- or just accept it until you actually need a second
+org to dial into this node correctly.
 
 ## Before you deploy
 
