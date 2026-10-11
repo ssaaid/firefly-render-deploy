@@ -202,6 +202,12 @@ services:
       # path. Stick to unprefixed names (CORE_*, ORG_*) for our own substitution.
       - key: FIREFLY_NAMESPACE
         value: default
+      - key: CORE_PUBLIC_URL
+        # Set to this service's https://*.onrender.com URL (or custom domain)
+        # after the first deploy. Without it, the Swagger UI at /api embeds
+        # http://0.0.0.0:5000/... as its spec URL -- unreachable from a
+        # browser and blocked as mixed content over https anyway.
+        sync: false
       - key: CORE_ORG_NAME
         value: org1
       - key: CORE_NODE_NAME

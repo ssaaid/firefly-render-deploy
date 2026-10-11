@@ -4,6 +4,7 @@ log:
 http:
   port: 5000
   address: 0.0.0.0
+  publicURL: "${CORE_PUBLIC_URL}"
 
 spi:
   enabled: true

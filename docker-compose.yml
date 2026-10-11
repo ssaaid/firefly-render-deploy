@@ -98,6 +98,7 @@ services:
       # gets read as the deprecated top-level org.name and silently reintroduces
       # the old validation path. Stick to unprefixed names for our own substitution.
       FIREFLY_NAMESPACE: ${FIREFLY_NAMESPACE:-default}
+      CORE_PUBLIC_URL: ${CORE_PUBLIC_URL:-http://localhost:5050}
       CORE_ORG_NAME: ${FIREFLY_ORG_NAME:-org1}
       CORE_NODE_NAME: ${FIREFLY_NODE_NAME:-node1}
       ORG_SIGNING_KEY: ${ORG_SIGNING_KEY:?set ORG_SIGNING_KEY in .env, see README}

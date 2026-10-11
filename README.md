@@ -248,6 +248,19 @@ under `/identities` rather than `/network/nodes/self` is the likely right tool, 
 that wasn't found/verified here) -- or just accept it until you actually need a second
 org to dial into this node correctly.
 
+## The Swagger UI at /api needs CORE_PUBLIC_URL
+
+FireFly bundles a Swagger UI at `/api` for trying out endpoints from the browser, but
+the page hardcodes its spec fetch as `http://0.0.0.0:5000/api/openapi.yaml` unless you
+set `http.publicURL`. Over `https://`, a browser blocks that as mixed content; even
+over plain `http://` it's just unreachable (`0.0.0.0` is a bind address, not something
+a browser can connect to). `CORE_PUBLIC_URL` (templated into `http.publicURL` in
+`services/core/firefly.core.yml.template`) fixes this -- it defaults to
+`http://localhost:5050` in `docker-compose.yml`; on Render it's `sync: false` on
+`firefly-core`, same chicken-and-egg as `DATAEXCHANGE_PUBLIC_HOST` (you only know the
+real `https://*.onrender.com` URL after the first deploy, so set it and redeploy once
+you have it). Without this, `/api` loads but shows "Failed to load API definition."
+
 ## Before you deploy
 
 The full stack (besu, signer, evmconnect, ipfs, dataexchange, postgres, core) has been
