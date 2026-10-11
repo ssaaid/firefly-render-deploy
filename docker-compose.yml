@@ -60,6 +60,17 @@ services:
     ports:
       - "5008:5008"
 
+  evmconnect2:
+    build: ./services/evmconnect
+    depends_on:
+      - besu2
+    environment:
+      BESU_HOST: besu2
+    volumes:
+      - evmconnect2-data:/data/evmconnect
+    ports:
+      - "5009:5008"
+
   dataexchange:
     build: ./services/dataexchange
     environment:
@@ -78,6 +89,7 @@ services:
       - postgres
       - ipfs
       - evmconnect
+      - evmconnect2
       - dataexchange
     environment:
       # Do NOT name any of these FIREFLY_ORG_* / FIREFLY_NODE_* / FIREFLY_*:
@@ -92,6 +104,7 @@ services:
       BATCHPIN_CONTRACT_ADDRESS: ${BATCHPIN_CONTRACT_ADDRESS:?set BATCHPIN_CONTRACT_ADDRESS in .env, see README}
       DATABASE_URL: postgres://firefly:firefly@postgres:5432/firefly?sslmode=disable
       EVMCONNECT_HOST: evmconnect
+      EVMCONNECT2_HOST: evmconnect2
       DATAEXCHANGE_HOST: dataexchange
       IPFS_HOST: ipfs
     ports:
@@ -104,4 +117,5 @@ volumes:
   signer-data:
   ipfs-data:
   evmconnect-data:
+  evmconnect2-data:
   dataexchange-data:

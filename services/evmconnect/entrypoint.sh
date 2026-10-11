@@ -4,13 +4,14 @@ set -eu
 CONFIG_DIR=/app/config
 mkdir -p "$CONFIG_DIR" /data/evmconnect
 
-# SIGNER_HOST is injected via render.yaml's fromService wiring to the
-# firefly-signer private service, which signs transactions and relays
-# everything else to firefly-besu -- evmconnect itself never sees a key.
-# Falls back to BLOCKCHAIN_RPC_URL directly if set (e.g. to point at a
-# different chain/signer setup instead of the bundled one).
+# SIGNER_HOST (signing chain) takes precedence over BESU_HOST (direct,
+# no-signing connection -- used by the second, independent chain's
+# evmconnect instance, which has nothing to sign since it's gateway mode
+# with no contract). Both fall back to BLOCKCHAIN_RPC_URL if set directly.
 if [ -n "${SIGNER_HOST:-}" ]; then
   export BLOCKCHAIN_RPC_URL="http://${SIGNER_HOST}:8545"
+elif [ -n "${BESU_HOST:-}" ]; then
+  export BLOCKCHAIN_RPC_URL="http://${BESU_HOST}:8545"
 fi
 
 envsubst < /app/evmconnect.yml.template > "$CONFIG_DIR/evmconnect.yml"

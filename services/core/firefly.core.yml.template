@@ -33,6 +33,15 @@ namespaces:
         - dataexchange0
         - sharedstorage0
 
+    # Gateway mode (no multiparty block -- no BatchPin contract, no org/node)
+    # against the second, independent chain. Exists purely so firefly-besu2 is
+    # actually visible/usable from FireFly, as its own namespace -- switch to
+    # it in the UI's namespace picker rather than looking inside "default".
+    - name: besu2
+      plugins:
+        - database0
+        - blockchain1
+
 plugins:
   database:
     - name: database0
@@ -49,6 +58,12 @@ plugins:
         ethconnect:
           url: "${EVMCONNECT_URL}"
           topic: "0"
+    - name: blockchain1
+      type: ethereum
+      ethereum:
+        ethconnect:
+          url: "${EVMCONNECT2_URL}"
+          topic: "1"
 
   dataexchange:
     - name: dataexchange0

@@ -9,10 +9,9 @@
 #   firefly-ipfs          (pserv) private: only firefly-core talks to it
 #   firefly-besu          (pserv) private: single IBFT2 validator, only firefly-signer talks to it
 #   firefly-besu2         (pserv) private: a SECOND, independent single-validator chain
-#                                 (chainId 138802) -- standalone, not wired into FireFly at
-#                                 all. Exists purely to have two separate blockchains running
-#                                 side by side; query it the same way as firefly-besu, via
-#                                 firefly-core's Shell (http://firefly-besu2:8545).
+#                                 (chainId 138802). Wired into FireFly as its own namespace
+#                                 ("besu2", gateway mode -- no contract, so no signer needed).
+#   firefly-evmconnect2   (pserv) private: connects directly to firefly-besu2, no signer.
 #
 # After the first deploy, you must deploy the FireFly BatchPin contract
 # yourself and set its address as BATCHPIN_CONTRACT_ADDRESS below -- see
@@ -78,6 +77,28 @@ services:
       # a DIFFERENT key from firefly-besu's. See README.
       - key: BESU_VALIDATOR_KEY
         sync: false
+
+  - type: pserv
+    name: firefly-evmconnect2
+    runtime: docker
+    dockerfilePath: ./services/evmconnect/Dockerfile
+    dockerContext: ./services/evmconnect
+    buildFilter:
+      paths:
+        - services/evmconnect/**
+    plan: starter
+    disk:
+      name: evmconnect2-data
+      mountPath: /data/evmconnect
+      sizeGB: 1
+    envVars:
+      # Connects directly to firefly-besu2 -- no signer needed, since the
+      # "besu2" namespace is gateway mode (no contract, nothing to sign).
+      - key: BESU_HOST
+        fromService:
+          type: pserv
+          name: firefly-besu2
+          property: host
 
   - type: pserv
     name: firefly-signer
@@ -200,6 +221,11 @@ services:
         fromService:
           type: pserv
           name: firefly-evmconnect
+          property: host
+      - key: EVMCONNECT2_HOST
+        fromService:
+          type: pserv
+          name: firefly-evmconnect2
           property: host
       - key: DATAEXCHANGE_HOST
         fromService:

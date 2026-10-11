@@ -10,6 +10,7 @@ mkdir -p "$CONFIG_DIR"
 # so we assemble full URLs here instead of relying on string concatenation
 # inside render.yaml, which the Blueprint spec does not support.
 export EVMCONNECT_URL="http://${EVMCONNECT_HOST}:5008"
+export EVMCONNECT2_URL="http://${EVMCONNECT2_HOST}:5008"
 export DATAEXCHANGE_URL="http://${DATAEXCHANGE_HOST}:3000"
 export IPFS_API_URL="http://${IPFS_HOST}:5001"
 export IPFS_GATEWAY_URL="http://${IPFS_HOST}:8080"

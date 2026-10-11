@@ -8,20 +8,23 @@ to [Render](https://render.com) using a Blueprint (`render.yaml`).
 ```
                  ┌─────────────────────┐
   internet ───▶  │  firefly-core (web)  │ ── Postgres (Render managed)
+                 │  namespace "default" │
+                 │  namespace "besu2"   │
                  └─────────┬───────────┘
                             │ private network
-          ┌─────────────────┼─────────────────┐
-          ▼                 ▼                 ▼
-  firefly-evmconnect   firefly-ipfs     firefly-dataexchange (web, public)
-     (pserv)              (pserv)         ◀── reached directly by other
-          │                                     orgs' FireFly nodes
-          ▼
-  firefly-signer (pserv)
-  holds the org's signing key
-          │
-          ▼
-  firefly-besu (pserv)
-  single-validator IBFT2 chain
+     ┌──────────────┬───────────┼─────────────────┐
+     ▼               ▼          ▼                 ▼
+firefly-evmconnect2  firefly-evmconnect  firefly-ipfs   firefly-dataexchange (web, public)
+  (pserv)              (pserv)             (pserv)        ◀── reached directly by other
+     │                    │                                    orgs' FireFly nodes
+     ▼                    ▼
+firefly-besu2        firefly-signer (pserv)
+(pserv)              holds the org's signing key
+chainId 138802              │
+no signer needed            ▼
+(gateway namespace)   firefly-besu (pserv)
+                       single-validator IBFT2 chain, chainId 138801
+                       (multiparty namespace, BatchPin contract)
 ```
 
 - **firefly-core** — the FireFly API/UI. Public. Talks to Postgres and the four
@@ -37,8 +40,8 @@ to [Render](https://render.com) using a Blueprint (`render.yaml`).
   public** — this is the one piece other orgs' FireFly nodes dial directly over the
   internet, so it's a `web` service, not `pserv`.
 - **firefly-besu2** — a second, independent single-validator Besu chain (chainId
-  `138802`). Standalone, not wired into FireFly at all — see "A second, independent
-  Besu chain" below.
+  `138802`), surfaced as its own FireFly namespace (`besu2`, gateway mode) via
+  **firefly-evmconnect2** — see "A second, independent Besu chain" below.
 
 Each service is a thin Docker wrapper around the official Hyperledger images
 (`ghcr.io/hyperledger-firefly/firefly`, `evmconnect`, `dataexchange-https`, `signer`,
@@ -100,12 +103,11 @@ reachable, Quorum, or a public testnet), remove the `firefly-besu` service and s
 `BLOCKCHAIN_RPC_URL` directly on `firefly-evmconnect` — `SIGNER_HOST` (pointing at
 `firefly-signer`) takes precedence over it only while that service exists.
 
-## A second, independent Besu chain
+## A second, independent Besu chain -- wired into FireFly as its own namespace
 
 `firefly-besu2` (`services/besu2/`) is a second single-validator IBFT2 chain, chainId
 `138802`, built the exact same way as `firefly-besu` but with its own fresh genesis +
-validator key. It's **standalone** — nothing else in this stack talks to it; it exists
-purely so you have two separate blockchains running side by side to look at.
+validator key.
 
 Same rules as the first chain: `services/besu2/genesis.json` is committed, the matching
 `BESU_VALIDATOR_KEY` (set on `firefly-besu2`'s own env var, independent of
@@ -113,19 +115,41 @@ Same rules as the first chain: `services/besu2/genesis.json` is committed, the m
 reusing `firefly-besu`'s key here (or vice versa) just gets you a node that answers RPC
 calls and never produces a block, same failure mode documented above.
 
-Query it the same way you'd query `firefly-besu` — from `firefly-core`'s Shell on
-Render, or `localhost:8547` locally (remapped from the container's `8545`, same pattern
-as the first chain on `8546`):
-```bash
-curl -s -X POST -H "Content-Type: application/json" \
-  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-  http://firefly-besu2:8545   # or http://localhost:8547 locally
+Unlike `firefly-besu`, this chain IS visible from FireFly -- as a **second namespace**,
+not inside "default". A FireFly namespace in multiparty mode is tied to exactly one
+blockchain (one BatchPin contract), so two chains means two namespaces, not two
+blockchain plugins under one namespace. The `besu2` namespace runs in **gateway mode**
+(no `multiparty` block, no contract, no org/node) since nothing needs broadcasting --
+it exists to prove chain connectivity, not to run multi-party flows:
+```yaml
+# services/core/firefly.core.yml.template
+namespaces:
+  predefined:
+    - name: besu2
+      plugins:
+        - database0   # shared across namespaces, scoped internally by namespace column
+        - blockchain1
+plugins:
+  blockchain:
+    - name: blockchain1
+      type: ethereum
+      ethereum:
+        ethconnect:
+          url: "${EVMCONNECT2_URL}"
+          topic: "1"   # must differ from blockchain0's topic "0"
 ```
-If you later want FireFly itself to interact with both chains (rather than just having
-a second one to look at), that needs a second `blockchain` plugin entry in
-`services/core/firefly.core.yml.template` (its own `evmconnect`/`signer` pair too,
-since each blockchain plugin talks to its own connector) — not set up here, since
-nothing asked for FireFly to actually use this chain yet.
+`firefly-evmconnect2` connects **directly** to `firefly-besu2` -- no signer in between,
+since gateway mode has nothing to sign. It reuses `services/evmconnect`'s image
+unchanged; `BESU_HOST` (rather than `SIGNER_HOST`) tells its entrypoint to skip the
+signer and build `BLOCKCHAIN_RPC_URL` straight from the chain.
+
+Switch to it in the UI via the namespace picker, or hit its own status directly:
+```bash
+curl -s http://localhost:5050/api/v1/namespaces/besu2/status   # or firefly-core's public URL on Render
+```
+Verified locally: both namespaces start side by side (`Initialized namespace 'default'
+multiparty=true` and `Initialized namespace 'besu2' multiparty=false` in the logs), and
+`/ui/namespaces/besu2/home` loads.
 
 ## Multiparty mode: the signer and the BatchPin contract
 
@@ -272,8 +296,8 @@ Then open:
 1. Push this repo to GitHub/GitLab.
 2. In the Render dashboard: **New → Blueprint**, point it at the repo.
 3. Render will create `firefly-db`, `firefly-besu`, `firefly-besu2`, `firefly-signer`,
-   `firefly-ipfs`, `firefly-evmconnect`, `firefly-dataexchange`, `firefly-core` from
-   `render.yaml`.
+   `firefly-ipfs`, `firefly-evmconnect`, `firefly-evmconnect2`, `firefly-dataexchange`,
+   `firefly-core` from `render.yaml`.
 4. Set the `sync: false` env vars in the dashboard before the first deploy:
    - `firefly-besu` → `BESU_VALIDATOR_KEY` (see "Connecting to Besu" above)
    - `firefly-besu2` → `BESU_VALIDATOR_KEY` (its OWN key, see "A second, independent
@@ -294,10 +318,10 @@ Then open:
 render.yaml                  Render Blueprint (all services + managed Postgres)
 docker-compose.yml           Local equivalent, for testing before you push
 services/core/               FireFly core: Dockerfile, entrypoint, config template (multiparty mode)
-services/evmconnect/         Blockchain connector
+services/evmconnect/         Blockchain connector image, reused as-is for both firefly-evmconnect and firefly-evmconnect2
 services/signer/             Holds the org's signing key, generates its own keystore on first boot
 services/besu/               Single-validator IBFT2 chain (genesis.json committed, key is not)
-services/besu2/              A second, independent IBFT2 chain -- standalone, not wired into FireFly
+services/besu2/              A second, independent IBFT2 chain -- its own "besu2" namespace in FireFly
 services/dataexchange/       Org-to-org data exchange (public-facing), generates its own TLS cert on first boot
 services/ipfs/               Shared storage backend
 scripts/check-config.sh      Sanity checks before deploying
