@@ -36,6 +36,9 @@ to [Render](https://render.com) using a Blueprint (`render.yaml`).
 - **firefly-dataexchange** — point-to-point transfer between organizations. **Must be
   public** — this is the one piece other orgs' FireFly nodes dial directly over the
   internet, so it's a `web` service, not `pserv`.
+- **firefly-besu2** — a second, independent single-validator Besu chain (chainId
+  `138802`). Standalone, not wired into FireFly at all — see "A second, independent
+  Besu chain" below.
 
 Each service is a thin Docker wrapper around the official Hyperledger images
 (`ghcr.io/hyperledger-firefly/firefly`, `evmconnect`, `dataexchange-https`, `signer`,
@@ -96,6 +99,33 @@ To point FireFly at a *different* chain instead (your real 4-node Besu cluster o
 reachable, Quorum, or a public testnet), remove the `firefly-besu` service and set
 `BLOCKCHAIN_RPC_URL` directly on `firefly-evmconnect` — `SIGNER_HOST` (pointing at
 `firefly-signer`) takes precedence over it only while that service exists.
+
+## A second, independent Besu chain
+
+`firefly-besu2` (`services/besu2/`) is a second single-validator IBFT2 chain, chainId
+`138802`, built the exact same way as `firefly-besu` but with its own fresh genesis +
+validator key. It's **standalone** — nothing else in this stack talks to it; it exists
+purely so you have two separate blockchains running side by side to look at.
+
+Same rules as the first chain: `services/besu2/genesis.json` is committed, the matching
+`BESU_VALIDATOR_KEY` (set on `firefly-besu2`'s own env var, independent of
+`firefly-besu`'s) is not, and it must be the exact key generated for *this* genesis —
+reusing `firefly-besu`'s key here (or vice versa) just gets you a node that answers RPC
+calls and never produces a block, same failure mode documented above.
+
+Query it the same way you'd query `firefly-besu` — from `firefly-core`'s Shell on
+Render, or `localhost:8547` locally (remapped from the container's `8545`, same pattern
+as the first chain on `8546`):
+```bash
+curl -s -X POST -H "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
+  http://firefly-besu2:8545   # or http://localhost:8547 locally
+```
+If you later want FireFly itself to interact with both chains (rather than just having
+a second one to look at), that needs a second `blockchain` plugin entry in
+`services/core/firefly.core.yml.template` (its own `evmconnect`/`signer` pair too,
+since each blockchain plugin talks to its own connector) — not set up here, since
+nothing asked for FireFly to actually use this chain yet.
 
 ## Multiparty mode: the signer and the BatchPin contract
 
@@ -241,10 +271,13 @@ Then open:
 
 1. Push this repo to GitHub/GitLab.
 2. In the Render dashboard: **New → Blueprint**, point it at the repo.
-3. Render will create `firefly-db`, `firefly-besu`, `firefly-signer`, `firefly-ipfs`,
-   `firefly-evmconnect`, `firefly-dataexchange`, `firefly-core` from `render.yaml`.
+3. Render will create `firefly-db`, `firefly-besu`, `firefly-besu2`, `firefly-signer`,
+   `firefly-ipfs`, `firefly-evmconnect`, `firefly-dataexchange`, `firefly-core` from
+   `render.yaml`.
 4. Set the `sync: false` env vars in the dashboard before the first deploy:
    - `firefly-besu` → `BESU_VALIDATOR_KEY` (see "Connecting to Besu" above)
+   - `firefly-besu2` → `BESU_VALIDATOR_KEY` (its OWN key, see "A second, independent
+     Besu chain" above — don't reuse `firefly-besu`'s)
    - `firefly-signer` → `SIGNER_KEY` (see "Multiparty mode" above)
    - `firefly-dataexchange` → `DATAEXCHANGE_PUBLIC_HOST` (its `*.onrender.com` hostname,
      or your custom domain — you'll only know the exact hostname after the first deploy,
@@ -264,6 +297,7 @@ services/core/               FireFly core: Dockerfile, entrypoint, config templa
 services/evmconnect/         Blockchain connector
 services/signer/             Holds the org's signing key, generates its own keystore on first boot
 services/besu/               Single-validator IBFT2 chain (genesis.json committed, key is not)
+services/besu2/              A second, independent IBFT2 chain -- standalone, not wired into FireFly
 services/dataexchange/       Org-to-org data exchange (public-facing), generates its own TLS cert on first boot
 services/ipfs/               Shared storage backend
 scripts/check-config.sh      Sanity checks before deploying

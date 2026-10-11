@@ -27,6 +27,15 @@ services:
     ports:
       - "8546:8545" # remapped on the host to avoid clashing with besu-ibft2-private-blockchain's node-1
 
+  besu2:
+    build: ./services/besu2
+    environment:
+      BESU_VALIDATOR_KEY: ${BESU2_VALIDATOR_KEY:?set BESU2_VALIDATOR_KEY in .env, see README}
+    volumes:
+      - besu2-data:/data/besu
+    ports:
+      - "8547:8545" # independent 2nd chain, standalone, not wired into FireFly
+
   signer:
     build: ./services/signer
     depends_on:
@@ -91,6 +100,7 @@ services:
 volumes:
   postgres-data:
   besu-data:
+  besu2-data:
   signer-data:
   ipfs-data:
   evmconnect-data:

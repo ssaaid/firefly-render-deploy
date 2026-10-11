@@ -8,6 +8,11 @@
 #   firefly-signer        (pserv) private: holds the org's signing key, signs for firefly-besu
 #   firefly-ipfs          (pserv) private: only firefly-core talks to it
 #   firefly-besu          (pserv) private: single IBFT2 validator, only firefly-signer talks to it
+#   firefly-besu2         (pserv) private: a SECOND, independent single-validator chain
+#                                 (chainId 138802) -- standalone, not wired into FireFly at
+#                                 all. Exists purely to have two separate blockchains running
+#                                 side by side; query it the same way as firefly-besu, via
+#                                 firefly-core's Shell (http://firefly-besu2:8545).
 #
 # After the first deploy, you must deploy the FireFly BatchPin contract
 # yourself and set its address as BATCHPIN_CONTRACT_ADDRESS below -- see
@@ -52,6 +57,25 @@ services:
       # The validator private key matching the address baked into
       # services/besu/genesis.json's extraData. Never commit this value --
       # set it only in the Render dashboard. See README for the generated key.
+      - key: BESU_VALIDATOR_KEY
+        sync: false
+
+  - type: pserv
+    name: firefly-besu2
+    runtime: docker
+    dockerfilePath: ./services/besu2/Dockerfile
+    dockerContext: ./services/besu2
+    buildFilter:
+      paths:
+        - services/besu2/**
+    plan: starter
+    disk:
+      name: besu2-data
+      mountPath: /data/besu
+      sizeGB: 5
+    envVars:
+      # Validator key matching services/besu2/genesis.json's extraData --
+      # a DIFFERENT key from firefly-besu's. See README.
       - key: BESU_VALIDATOR_KEY
         sync: false
 
